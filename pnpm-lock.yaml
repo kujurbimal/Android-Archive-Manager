@@ -220,6 +220,12 @@ importers:
 
   artifacts/archive-manager:
     dependencies:
+      7z-wasm:
+        specifier: ^1.2.0
+        version: 1.2.0
+      expo-asset:
+        specifier: ~57.0.20
+        version: 57.0.20(expo@57.0.30)(react-native@0.86.3(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
       expo-document-picker:
         specifier: ~57.0.3
         version: 57.0.3(expo@57.0.30)
@@ -599,6 +605,11 @@ importers:
         version: 4.23.13
 
 packages:
+
+  7z-wasm@1.2.0:
+    resolution: {integrity: sha512-AZjtWXFleAe5nQ27JYISs70cICjO0zZr4LU45I9pXKcrhG0qiEWgq3Vjwr9JHHihFLuqgc7uSHYVn/z3vXCjdw==}
+    engines: {node: '>=8.0.0'}
+    hasBin: true
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -4415,6 +4426,10 @@ packages:
     resolution: {integrity: sha512-Kko+Y5XQ6fM+Ce3dq3m9YGxnacYZYl9cA1wZjaF3Vbry2L3i1qVg8+CAgNPsXRArPMUMCaOR7oa9Nqntc43JKA==}
     engines: {node: '>= 20.19.0'}
 
+  readline-sync@1.4.10:
+    resolution: {integrity: sha512-gNva8/6UAe8QYepIQH/jQ2qn91Qj0B9sYjMBBs3QOB8F2CXcKgLxQaJRP76sWVRQt+QU+8fAkCbCvjjMFu7Ycw==}
+    engines: {node: '>= 0.8.0'}
+
   real-require@0.2.0:
     resolution: {integrity: sha512-57frrGM/OCTLqLOAh0mhVA9VBMHd+9U7Zb2THMGdBUoZVOtGbJzjxsYGDJ3A9AYYCP4hn6y1TVbaOfzWtm5GFg==}
     engines: {node: '>= 12.13.0'}
@@ -5090,6 +5105,10 @@ packages:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
 snapshots:
+
+  7z-wasm@1.2.0:
+    dependencies:
+      readline-sync: 1.4.10
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -9827,6 +9846,8 @@ snapshots:
   readdirp@4.1.2: {}
 
   readdirp@5.1.1: {}
+
+  readline-sync@1.4.10: {}
 
   real-require@0.2.0: {}
 

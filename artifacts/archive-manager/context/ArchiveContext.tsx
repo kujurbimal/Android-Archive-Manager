@@ -6,10 +6,13 @@ import { Platform } from 'react-native';
 import {
   ArchiveItem,
   cleanFileName,
-  createZip,
-  extractZip,
   removeStoredFile,
 } from '@/lib/archive';
+import {
+  ArchiveFormat,
+  createArchiveInFormat,
+  extractArchiveInFormat,
+} from '@/lib/archive-formats';
 
 const STORAGE_KEY = 'archive-manager.library.v1';
 const MAX_IMPORT_BYTES = 64 * 1024 * 1024;
@@ -25,7 +28,12 @@ type ArchiveContextValue = {
   items: ArchiveItem[];
   ready: boolean;
   importFiles: () => Promise<number>;
-  createArchive: (name: string, selectedIds: string[], level: number) => Promise<ArchiveItem>;
+  createArchive: (
+    name: string,
+    selectedIds: string[],
+    level: number,
+    format: ArchiveFormat,
+  ) => Promise<ArchiveItem>;
   extractSelected: (archive: ArchiveItem, paths: string[]) => Promise<number>;
   deleteItem: (item: ArchiveItem) => Promise<void>;
 };
@@ -142,19 +150,25 @@ export function ArchiveProvider({ children }: { children: React.ReactNode }) {
     return imported.length;
   };
 
-  const createArchive = async (name: string, selectedIds: string[], level: number) => {
+  const createArchive = async (
+    name: string,
+    selectedIds: string[],
+    level: number,
+    format: ArchiveFormat,
+  ) => {
     const selected = items.filter((item) => selectedIds.includes(item.id));
-    const created = await createZip(
+    const created = await createArchiveInFormat(
       name,
       selected.map((item) => ({ name: item.name, uri: item.uri })),
       level,
+      format,
     );
     await persist([created, ...items]);
     return created;
   };
 
   const extractSelected = async (archive: ArchiveItem, paths: string[]) => {
-    const extracted = await extractZip(archive.uri, archive.name, paths);
+    const extracted = await extractArchiveInFormat(archive.uri, archive.name, paths);
     await persist([...extracted, ...items]);
     return extracted.length;
   };

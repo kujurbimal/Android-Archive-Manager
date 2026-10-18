@@ -20,9 +20,9 @@ export type ZipEntry = {
 type CentralEntry = ZipEntry & { crc32: number };
 
 const ROOT_FOLDER = 'ArchiveManager';
-const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
-const MAX_TOTAL_UNCOMPRESSED_BYTES = 200 * 1024 * 1024;
-const MAX_ENTRIES = 3000;
+export const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
+export const MAX_TOTAL_UNCOMPRESSED_BYTES = 200 * 1024 * 1024;
+export const MAX_ENTRIES = 3000;
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength);
@@ -30,7 +30,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
-function makeId() {
+export function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -54,7 +54,7 @@ function getRootDirectory() {
   return new Directory(Paths.document, ROOT_FOLDER);
 }
 
-async function readUriBytes(uri: string): Promise<Uint8Array> {
+export async function readUriBytes(uri: string): Promise<Uint8Array> {
   if (Platform.OS === 'web') {
     const response = await fetch(uri);
     if (!response.ok) throw new Error('Could not read this file.');
@@ -68,7 +68,7 @@ export async function readTextFile(uri: string) {
   return new TextDecoder().decode(bytes);
 }
 
-async function saveBytes(relativePath: string, bytes: Uint8Array): Promise<string> {
+export async function saveBytes(relativePath: string, bytes: Uint8Array): Promise<string> {
   const safeParts = relativePath
     .replace(/\\/g, '/')
     .split('/')
@@ -106,7 +106,7 @@ function crc32(bytes: Uint8Array) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function safeZipPath(input: string) {
+export function safeArchivePath(input: string) {
   const path = input.replace(/\\/g, '/');
   if (
     path.startsWith('/') ||
@@ -179,7 +179,7 @@ function readCentralDirectory(bytes: Uint8Array): CentralEntry[] {
     }
 
     const rawName = new TextDecoder().decode(bytes.subarray(nameStart, nameStart + nameLength));
-    const path = safeZipPath(rawName);
+    const path = safeArchivePath(rawName);
     if (seen.has(path)) throw new Error('This archive has duplicate file paths.');
     seen.add(path);
     const isDirectory = rawName.endsWith('/') || rawName.endsWith('\\');

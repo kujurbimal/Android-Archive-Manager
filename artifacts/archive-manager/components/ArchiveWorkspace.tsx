@@ -25,11 +25,17 @@ import {
   ArchiveItem,
   exportFile,
   formatBytes,
-  inspectZip,
   readTextFile,
-  testZip,
   ZipEntry,
 } from '@/lib/archive';
+import {
+  ARCHIVE_FORMAT_OPTIONS,
+  ArchiveFormat,
+  archiveFormatFromName,
+  archiveStatusText,
+  inspectArchiveInFormat,
+  testArchiveInFormat,
+} from '@/lib/archive-formats';
 
 type MainTab = 'files' | 'create' | 'modules';
 type LibraryFilter = 'all' | 'archives' | 'files';
@@ -46,6 +52,7 @@ export default function ArchiveWorkspace() {
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [archiveName, setArchiveName] = useState('');
+  const [archiveFormat, setArchiveFormat] = useState<ArchiveFormat>('zip');
   const [compression, setCompression] = useState(6);
   const [busy, setBusy] = useState(false);
   const [openedArchive, setOpenedArchive] = useState<ArchiveItem | null>(null);
@@ -90,14 +97,14 @@ export default function ArchiveWorkspace() {
     if (item.kind === 'archive') {
       setBusy(true);
       try {
-        if (!/\.zip$/i.test(item.name)) {
-          tell('Only ZIP archives can be opened in this build.');
+        if (!archiveFormatFromName(item.name)) {
+          tell('Open ZIP, 7z, TAR, TAR.GZ, or GZIP archives.');
           return;
         }
-        const zipEntries = await inspectZip(item.uri);
+        const archiveEntries = await inspectArchiveInFormat(item.uri, item.name);
         setOpenedArchive(item);
-        setEntries(zipEntries);
-        setSelectedPaths(zipEntries.filter((entry) => !entry.isDirectory).map((entry) => entry.path));
+        setEntries(archiveEntries);
+        setSelectedPaths(archiveEntries.filter((entry) => !entry.isDirectory).map((entry) => entry.path));
       } catch (error) {
         tell(error instanceof Error ? error.message : 'Could not open this archive.');
       } finally {
@@ -129,7 +136,7 @@ export default function ArchiveWorkspace() {
     if (!openedArchive) return;
     try {
       setBusy(true);
-      const result = await testZip(openedArchive.uri);
+      const result = await testArchiveInFormat(openedArchive.uri, openedArchive.name);
       tell(`Integrity passed · ${result.fileCount} files · ${formatBytes(result.expandedBytes)} unpacked`);
     } catch (error) {
       tell(error instanceof Error ? error.message : 'Archive integrity check failed.');
@@ -159,7 +166,12 @@ export default function ArchiveWorkspace() {
     }
     try {
       setBusy(true);
-      const created = await createArchive(archiveName.trim() || 'My archive', selectedIds, compression);
+      const created = await createArchive(
+        archiveName.trim() || 'My archive',
+        selectedIds,
+        compression,
+        archiveFormat,
+      );
       setSelectedIds([]);
       setArchiveName('');
       setTab('files');
@@ -279,6 +291,8 @@ export default function ArchiveWorkspace() {
             setSelectedIds={setSelectedIds}
             archiveName={archiveName}
             setArchiveName={setArchiveName}
+            format={archiveFormat}
+            setFormat={setArchiveFormat}
             compression={compression}
             setCompression={setCompression}
             selectedSize={selectedSize}
