@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Archive Manager",
+    "slug": "archive-manager",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "archive-manager",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#F6F5EF",
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#17352D"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sharing"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
