@@ -9,6 +9,7 @@ import {
   safeArchivePath,
 } from '@/lib/archive';
 import type { ZipEntry } from '@/lib/archive';
+import { parseSevenZipListing } from '@/lib/seven-zip-listing';
 
 declare const require: (path: string) => number;
 const WASM_ASSET = require('7z-wasm/7zz.wasm');
@@ -72,83 +73,57 @@ async function createRun(): Promise<SevenZipRun> {
 }
 
 function parseList(output: string[]): SevenZipContents {
-  const separator = output.findIndex((line) => line.trim() === '----------');
-  if (separator < 0) {
-    throw new Error('7z could not read the archive directory. It may be damaged or unsupported.');
-  }
-
-  const entries: ZipEntry[] = [];
-  const seen = new Set<string>();
-  let expandedBytes = 0;
-  const blocks = output.slice(separator + 1).join('\n').split(/\n\s*\n/);
-  for (const block of blocks) {
-    const fields: Record<string, string> = {};
-    for (const line of block.split('\n')) {
-      const separatorAt = line.indexOf(' = ');
-      if (separatorAt >= 0) fields[line.slice(0, separatorAt)] = line.slice(separatorAt + 3);
-    }
-    if (!fields.Path) continue;
-
-    const attributes = fields.Attributes ?? '';
-    if (
-      fields['Hard Link'] ||
-      fields['Symbolic Link'] ||
-      /l[rwx-]{8,}/.test(attributes)
-    ) {
-      throw new Error('This 7z archive contains a link, which is not extracted.');
-    }
-    if (/^(?:\+|1|true|yes)$/i.test(fields.Encrypted ?? '')) {
-      throw new Error('Password-protected 7z archives are not supported yet.');
-    }
-
-    const path = safeArchivePath(fields.Path);
-    const isDirectory =
-      fields.Folder === '+' ||
-      attributes.trimStart().startsWith('D') ||
-      fields.Path.endsWith('/') ||
-      fields.Path.endsWith('\\');
-    const size = isDirectory ? 0 : Number(fields.Size ?? 0);
-    if (!Number.isSafeInteger(size) || size < 0) {
-      throw new Error('This 7z archive has an invalid file size.');
-    }
-    if (seen.has(path)) throw new Error('This archive has duplicate file paths.');
-    seen.add(path);
-    if (!isDirectory) {
-      expandedBytes += size;
-      if (expandedBytes > MAX_TOTAL_UNCOMPRESSED_BYTES) {
-        throw new Error('This archive expands beyond the 200 MB safety limit.');
-      }
-    }
-    entries.push({ path, size, isDirectory });
-    if (entries.length > MAX_ENTRIES) {
-      throw new Error(`This archive has more than ${MAX_ENTRIES} entries.`);
-    }
-  }
-
-  const files = entries.filter((entry) => !entry.isDirectory);
-  const folders = new Set<string>();
-  for (const entry of files) {
-    const parts = entry.path.split('/');
-    for (let index = 1; index < parts.length; index += 1) {
-      folders.add(parts.slice(0, index).join('/'));
-    }
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory) folders.add(entry.path.replace(/\/$/, ''));
-  }
-  for (const folder of folders) {
-    if (!seen.has(folder)) entries.push({ path: folder, size: 0, isDirectory: true });
-  }
-  entries.sort((a, b) => {
-    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-    return a.path.localeCompare(b.path);
-  });
-  return { entries, files: {}, expandedBytes };
+  const listing = parseSevenZipListing(
+    output,
+    safeArchivePath,
+    MAX_ENTRIES,
+    MAX_TOTAL_UNCOMPRESSED_BYTES,
+  );
+  return { ...listing, files: {} };
 }
 
 function openSevenZip(engine: SevenZipModule, bytes: Uint8Array) {
   engine.FS.writeFile('/input.7z', bytes);
   return '/input.7z';
+}
+
+function guardOutputWrites(
+  engine: SevenZipModule,
+  maxBytes: number,
+  onLimit: () => void,
+) {
+  const originalWrite = engine.FS.write.bind(engine.FS);
+  const fileSizes = new Map<string, number>();
+  let totalWritten = 0;
+
+  engine.FS.write = (stream, buffer, offset, length, position, canOwn) => {
+    let path = '';
+    try {
+      path = engine.FS.getPath(stream.object);
+    } catch {
+      return originalWrite(stream, buffer, offset, length, position, canOwn);
+    }
+    if (!path.startsWith('/extract/')) {
+      return originalWrite(stream, buffer, offset, length, position, canOwn);
+    }
+
+    const currentSize = fileSizes.get(path) ?? 0;
+    const streamPosition = (stream as typeof stream & { position?: number }).position;
+    const start = position ?? streamPosition ?? currentSize;
+    const nextSize = Math.max(currentSize, start + length);
+    if (totalWritten + nextSize - currentSize > maxBytes) {
+      onLimit();
+      throw new Error('This archive expands beyond the 200 MB safety limit.');
+    }
+
+    const written = originalWrite(stream, buffer, offset, length, position, canOwn);
+    if (written > 0) {
+      const actualSize = Math.max(currentSize, start + written);
+      totalWritten += actualSize - currentSize;
+      fileSizes.set(path, actualSize);
+    }
+    return written;
+  };
 }
 
 export async function listSevenZip(bytes: Uint8Array) {
@@ -177,7 +152,8 @@ export async function testSevenZip(bytes: Uint8Array) {
     listing = parseList(output);
     output.length = 0;
     engine.callMain(['t', archivePath]);
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && !/^(?:Aborted|ExitStatus)/.test(error.message)) throw error;
     throw new Error(errors.join(' ') || 'The 7z integrity test failed.');
   }
   if (!output.some((line) => line.includes('Everything is Ok'))) {
@@ -198,12 +174,20 @@ export async function extractSevenZip(bytes: Uint8Array, selectedPaths: string[]
   const { engine, output, errors } = await createRun();
   const archivePath = openSevenZip(engine, bytes);
   let listing: SevenZipContents;
+  let expandedLimitHit = false;
   try {
     engine.callMain(['l', '-slt', archivePath]);
     listing = parseList(output);
     engine.FS.mkdir('/extract');
+    guardOutputWrites(engine, MAX_TOTAL_UNCOMPRESSED_BYTES, () => {
+      expandedLimitHit = true;
+    });
     engine.callMain(['x', '-y', archivePath, '-o/extract']);
-  } catch {
+  } catch (error) {
+    if (expandedLimitHit) {
+      throw new Error('This archive expands beyond the 200 MB safety limit.');
+    }
+    if (error instanceof Error && !/^(?:Aborted|ExitStatus)/.test(error.message)) throw error;
     throw new Error(errors.join(' ') || 'The 7z archive could not be extracted.');
   }
 

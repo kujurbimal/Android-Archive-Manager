@@ -137,7 +137,7 @@ export default function ArchiveWorkspace() {
     try {
       setBusy(true);
       const result = await testArchiveInFormat(openedArchive.uri, openedArchive.name);
-      tell(`Integrity passed · ${result.fileCount} files · ${formatBytes(result.expandedBytes)} unpacked`);
+      tell(`Archive check passed · ${result.fileCount} files · ${formatBytes(result.expandedBytes)} unpacked`);
     } catch (error) {
       tell(error instanceof Error ? error.message : 'Archive integrity check failed.');
     } finally {
@@ -191,7 +191,7 @@ export default function ArchiveWorkspace() {
       } else if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(item.uri, {
           dialogTitle: `Export ${item.name}`,
-          mimeType: item.kind === 'archive' ? 'application/zip' : undefined,
+          mimeType: item.kind === 'archive' ? archiveMimeType(item.name) : undefined,
         });
       } else {
         tell('Sharing is not available on this device.');
@@ -523,7 +523,7 @@ function LibraryPanel(props: {
   } = props;
   const filters: { value: LibraryFilter; label: string; count: number }[] = [
     { value: 'all', label: 'All', count: allCount },
-    { value: 'archives', label: 'ZIPs', count: archiveCount },
+    { value: 'archives', label: 'Archives', count: archiveCount },
     { value: 'files', label: 'Files', count: allCount - archiveCount },
   ];
 
@@ -668,7 +668,7 @@ function LibraryPanel(props: {
         <View style={[styles.noMatches, { borderColor: colors.border }]}>
           <Feather name="search" size={19} color={colors.mutedForeground} />
           <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-            No {filter === 'archives' ? 'ZIP archives' : 'files'} match this view.
+          No {filter === 'archives' ? 'archives' : 'files'} match this view.
           </Text>
         </View>
       )}
@@ -706,7 +706,7 @@ function FileRow(props: {
         <View style={styles.fileText}>
           <Text numberOfLines={1} style={[styles.fileName, { color: colors.foreground }]}>{item.name}</Text>
           <Text style={[styles.fileMeta, { color: colors.mutedForeground }]}>
-            {item.kind === 'archive' ? 'ZIP archive' : 'File'} · {formatBytes(item.size)}
+            {item.kind === 'archive' ? archiveTypeLabel(item.name) : 'File'} · {formatBytes(item.size)}
           </Text>
         </View>
       </Pressable>
@@ -722,6 +722,8 @@ function CreatePanel(props: {
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>;
   archiveName: string;
   setArchiveName: (name: string) => void;
+  format: ArchiveFormat;
+  setFormat: (format: ArchiveFormat) => void;
   compression: number;
   setCompression: (level: number) => void;
   selectedSize: number;
@@ -733,7 +735,7 @@ function CreatePanel(props: {
 }) {
   const {
     items, selectedIds, setSelectedIds, archiveName, setArchiveName, compression,
-    setCompression, selectedSize, busy, onImport, onCreate, styles, colors,
+    format, setFormat, setCompression, selectedSize, busy, onImport, onCreate, styles, colors,
   } = props;
   const profiles = [
     { level: 1, label: 'Quick', detail: 'Fastest' },
@@ -760,7 +762,7 @@ function CreatePanel(props: {
         <Text style={[styles.kicker, { color: colors.primary }]}>ARCHIVE BUILDER</Text>
         <Text style={[styles.headline, { color: colors.foreground }]}>Pack it up.</Text>
         <Text style={[styles.subhead, { color: colors.mutedForeground }]}>
-          Choose local files, set a compression profile, and create a ZIP on this device.
+          Choose local files, select an archive format, and create it on this device.
         </Text>
 
         <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Archive name</Text>
@@ -775,31 +777,71 @@ function CreatePanel(props: {
           returnKeyType="done"
         />
 
-        <View style={styles.sectionHeading}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Compression</Text>
-          <Text style={[styles.caption, { color: colors.mutedForeground }]}>ZIP / DEFLATE</Text>
+        <View style={styles.formatHeading}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Format</Text>
+          <Text style={[styles.caption, { color: colors.mutedForeground }]}>LOCAL</Text>
         </View>
-        <View style={styles.profileRow}>
-          {profiles.map((profile) => {
-            const active = compression === profile.level;
+        <View style={styles.formatRow}>
+          {ARCHIVE_FORMAT_OPTIONS.map((option) => {
+            const active = format === option.id;
             return (
               <Pressable
-                key={profile.level}
+                key={option.id}
                 accessibilityRole="radio"
                 accessibilityState={{ selected: active }}
-                onPress={() => setCompression(profile.level)}
+                testID={`format-${option.id.replace('.', '-')}`}
+                onPress={() => setFormat(option.id)}
                 style={[
-                  styles.profileCard,
-                  { backgroundColor: active ? colors.accent : colors.card, borderColor: active ? colors.primary : colors.border },
+                  styles.formatOption,
+                  {
+                    backgroundColor: active ? colors.accent : colors.card,
+                    borderColor: active ? colors.primary : colors.border,
+                  },
                 ]}
               >
-                <Feather name={active ? 'check-circle' : 'circle'} size={17} color={active ? colors.primary : colors.mutedForeground} />
-                <Text style={[styles.profileName, { color: colors.foreground }]}>{profile.label}</Text>
-                <Text style={[styles.profileDetail, { color: colors.mutedForeground }]}>{profile.detail}</Text>
+                <Text style={[styles.formatName, { color: active ? colors.primary : colors.foreground }]}>
+                  {option.label}
+                </Text>
+                <Text style={[styles.formatDetail, { color: colors.mutedForeground }]}>{option.detail}</Text>
               </Pressable>
             );
           })}
         </View>
+        <Text style={[styles.formatNote, { color: colors.mutedForeground }]}>
+          {archiveStatusText(format)}
+        </Text>
+
+        <View style={styles.sectionHeading}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Compression</Text>
+          <Text style={[styles.caption, { color: colors.mutedForeground }]}>
+            {format === 'zip' ? 'ZIP / DEFLATE' : format === '7z' ? '7z / LZMA2' : format === 'tar' ? 'NONE' : 'GZIP'}
+          </Text>
+        </View>
+        {format === 'tar' ? (
+          <Text style={[styles.formatNote, { color: colors.mutedForeground }]}>TAR stores files without compressing them.</Text>
+        ) : (
+          <View style={styles.profileRow}>
+            {profiles.map((profile) => {
+              const active = compression === profile.level;
+              return (
+                <Pressable
+                  key={profile.level}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => setCompression(profile.level)}
+                  style={[
+                    styles.profileCard,
+                    { backgroundColor: active ? colors.accent : colors.card, borderColor: active ? colors.primary : colors.border },
+                  ]}
+                >
+                  <Feather name={active ? 'check-circle' : 'circle'} size={17} color={active ? colors.primary : colors.mutedForeground} />
+                  <Text style={[styles.profileName, { color: colors.foreground }]}>{profile.label}</Text>
+                  <Text style={[styles.profileDetail, { color: colors.mutedForeground }]}>{profile.detail}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
 
         <View style={styles.sectionHeading}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Files to include</Text>
@@ -854,24 +896,24 @@ function CreatePanel(props: {
         <View style={[styles.securityNote, { backgroundColor: colors.accent }]}>
           <Feather name="lock" size={16} color={colors.primary} />
           <Text style={[styles.securityText, { color: colors.accentForeground }]}>
-            Files are processed on-device. This build supports ZIP files up to 64 MB.
+            All formats stay on-device · up to 64 MB input and 200 MB unpacked.
           </Text>
         </View>
         <Pressable
           accessibilityRole="button"
           testID="create-archive-button"
-          disabled={selectedIds.length === 0 || busy}
+          disabled={selectedIds.length === 0 || busy || (format === 'gzip' && selectedIds.length !== 1)}
           onPress={onCreate}
           style={[
             styles.primaryButton,
             styles.createButton,
             { backgroundColor: colors.primary },
-            (selectedIds.length === 0 || busy) && styles.disabled,
+            (selectedIds.length === 0 || busy || (format === 'gzip' && selectedIds.length !== 1)) && styles.disabled,
           ]}
         >
           <Feather name="archive" size={17} color={colors.primaryForeground} />
           <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>
-            Create ZIP archive
+            Create {format.toUpperCase()} archive
           </Text>
         </Pressable>
       </ScrollView>
@@ -885,8 +927,8 @@ function ModulesPanel(props: {
 }) {
   const { styles, colors } = props;
   const modules = [
-    { icon: 'archive' as const, title: 'ZIP archives', detail: 'Create, inspect, select, extract, and CRC-check ZIP files.', state: 'READY' },
-    { icon: 'layers' as const, title: 'More archive formats', detail: '7z, RAR, TAR, gzip, bzip2, XZ, lz4, and zstd.', state: 'PLANNED' },
+    { icon: 'archive' as const, title: 'Archive formats', detail: 'Create and inspect ZIP, 7z, TAR, TAR.GZ, and GZIP files.', state: 'READY' },
+    { icon: 'layers' as const, title: 'More archive formats', detail: 'RAR, bzip2, XZ, lz4, and zstd.', state: 'PLANNED' },
     { icon: 'key' as const, title: 'Encrypted & split archives', detail: 'Password protection and numbered multi-volume sets.', state: 'PLANNED' },
     { icon: 'edit-3' as const, title: 'Archive editing & engine', detail: 'Add or remove files in-place, fast small-file parsing, and multithreaded processing.', state: 'PLANNED' },
     { icon: 'mail' as const, title: 'Email & Android handoff', detail: 'Open mail attachments, install app backups, and place OBB game data.', state: 'PLANNED' },
@@ -902,7 +944,7 @@ function ModulesPanel(props: {
       <Text style={[styles.kicker, { color: colors.primary }]}>CAPABILITIES</Text>
       <Text style={[styles.headline, { color: colors.foreground }]}>Built in layers.</Text>
       <Text style={[styles.subhead, { color: colors.mutedForeground }]}>
-        ZIP management is ready in this first build. Additional systems are shown here as planned—not as active integrations.
+        ZIP, 7z, TAR, and gzip are active locally. Other systems shown here are planned—not active integrations.
       </Text>
       <View style={styles.moduleList}>
         {modules.map((module) => (
@@ -985,6 +1027,19 @@ function fileIcon(name: string): React.ComponentProps<typeof Feather>['name'] {
   return 'file';
 }
 
+function archiveTypeLabel(name: string) {
+  const format = archiveFormatFromName(name);
+  return format ? `${format.toUpperCase()} archive` : 'Archive';
+}
+
+function archiveMimeType(name: string) {
+  const format = archiveFormatFromName(name);
+  if (format === '7z') return 'application/x-7z-compressed';
+  if (format === 'tar') return 'application/x-tar';
+  if (format === 'gzip' || format === 'tar.gz') return 'application/gzip';
+  return 'application/zip';
+}
+
 function makeStyles(colors: ReturnType<typeof useColors>) {
   return StyleSheet.create({
     app: { flex: 1 },
@@ -1041,6 +1096,12 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     kicker: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1.7, marginBottom: 10 },
     fieldLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 23, marginBottom: 8 },
     nameInput: { minHeight: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 13, fontFamily: 'Inter_400Regular', fontSize: 13, outlineStyle: 'none' as never },
+    formatHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 9 },
+    formatRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 8 },
+    formatOption: { flexGrow: 1, flexBasis: '17%', minWidth: 58, minHeight: 55, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingVertical: 7, paddingHorizontal: 3 },
+    formatName: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+    formatDetail: { fontFamily: 'Inter_400Regular', fontSize: 8.5, marginTop: 2 },
+    formatNote: { fontFamily: 'Inter_400Regular', fontSize: 10.5, lineHeight: 16, marginBottom: 14 },
     profileRow: { flexDirection: 'row', gap: 9, marginBottom: 23 },
     profileCard: { flex: 1, minHeight: 85, borderWidth: 1, borderRadius: 13, paddingHorizontal: 10, paddingVertical: 10, justifyContent: 'space-between' },
     profileName: { fontFamily: 'Inter_600SemiBold', fontSize: 11.5, marginTop: 5 },

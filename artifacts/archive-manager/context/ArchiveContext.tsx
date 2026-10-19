@@ -16,7 +16,7 @@ import {
 
 const STORAGE_KEY = 'archive-manager.library.v1';
 const MAX_IMPORT_BYTES = 64 * 1024 * 1024;
-const ARCHIVE_EXTENSION = /\.(zip|7z|rar5?|tar|bz2|gz|xz|lz4|zst|iso|cab|arj|lzh|lha|deb|rpm|dmg|img|cpio|wim|ecm|apk|mtz)(\.\d+)?$/i;
+const ARCHIVE_EXTENSION = /\.(zip|7z|rar5?|tar|tgz|bz2|gz|xz|lz4|zst|iso|cab|arj|lzh|lha|deb|rpm|dmg|img|cpio|wim|ecm|apk|mtz)(\.\d+)?$/i;
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength);
