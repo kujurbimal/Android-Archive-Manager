@@ -4,7 +4,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
-
+val keystoreProperties = Properties().apply {
+    val propertiesFile = rootProject.file("keystore.properties")
+    require(propertiesFile.exists()) {
+        "Missing native-android/keystore.properties"
+    }
+    propertiesFile.inputStream().use { load(it) }
+}
 android {
     namespace = "com.kujurbimal.archivemanager"
     compileSdk = 36
