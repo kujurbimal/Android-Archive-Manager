@@ -35,4 +35,4 @@ jobs:
           gradle-version: "8.13"
       - name: Build debug APK
         working-directory: native-android
-        run: gradle assembleDebug
+        run: gradle testDebugUnitTest assembleDebug assembleRelease
