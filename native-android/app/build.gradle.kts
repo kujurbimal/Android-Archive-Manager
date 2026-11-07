@@ -60,6 +60,7 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.10")
     implementation("com.github.junrar:junrar:7.5.5")
     testImplementation("junit:junit:4.13.2")
 }
