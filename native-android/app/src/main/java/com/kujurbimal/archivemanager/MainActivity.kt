@@ -134,6 +134,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun extractArchive(uri: Uri, destinationUri: Uri, onProgress: (String) -> Unit) {
+        runCatching {
+            contentResolver.takePersistableUriPermission(destinationUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
         val input = copyUriToCache(uri)
         val staging = File(cacheDir, "extract-${System.currentTimeMillis()}").apply { mkdirs() }
         try {
