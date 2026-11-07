@@ -16,12 +16,22 @@ This directory contains a native Kotlin/Jetpack Compose Android starter for the 
 - Target SDK: 36
 - Version: 1.0.0 (versionCode 1)
 
-## Current prototype scope
-- Uses Android's Storage Access Framework; no broad storage permission is requested.
-- Adds selected documents to an in-session list.
-- Can inspect ZIP central-directory entries by copying the selected document temporarily into app cache.
-- The original selected file is not modified.
-- This is a starter implementation, not a complete archive utility. TAR/7z/RAR support, archive creation, safe extraction, checksum verification, persistent library metadata, and comprehensive error/security tests are not implemented.
+## Implemented archive features
+- Import multiple documents through Android's Storage Access Framework and remember read access where the provider supports persistable permissions.
+- Search the local library, sort by name or reverse insertion order, and toggle light/dark appearance.
+- Inspect ZIP, TAR, TAR.GZ, GZIP, 7z and RAR entry names.
+- Create ZIP, TAR, TAR.GZ, GZIP (one source file) and 7z archives from selected files.
+- Extract ZIP, TAR, TAR.GZ, GZIP, 7z and RAR into a user-selected folder using Android's document provider.
+- Extraction rejects absolute paths and parent traversal, blocks TAR links/device entries, stages output before copying, caps archive entries at 10,000 and expanded data at 1 GiB.
+- RAR is extraction-only; creating RAR archives is not supported.
+- Archive operations run off the main thread. The app does not request broad storage permissions.
+
+## Known limitations / production hardening still required
+- Archive creation currently accepts selected files, not recursive folder trees.
+- RAR password-protected archives and multi-volume archives need dedicated UX and device testing; some methods/variants may not be supported by Junrar.
+- ZIP symlink metadata is not preserved; extraction writes file contents as regular files.
+- There is no archive integrity/checksum verification UI, pause/resume, or detailed per-file progress yet.
+- Validate duplicate filenames, provider-specific document permissions, low-storage conditions, very large inputs, malformed archives, encrypted archives, and Android 8–16 devices before release.
 
 ## Before Play production
 1. Run Gradle sync and compile with the current Android Gradle Plugin/Kotlin versions.
