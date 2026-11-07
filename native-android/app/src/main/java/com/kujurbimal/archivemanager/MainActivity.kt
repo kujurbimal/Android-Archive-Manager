@@ -140,16 +140,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            return ZipFile(temp).use { zip ->
-                val names = mutableListOf<String>()
-                val entries = zip.entries()
-                while (entries.hasMoreElements() && names.size < MAX_DISPLAY_ENTRIES) {
-                    names.add(entries.nextElement().name)
-                }
-                if (names.isEmpty()) listOf("This ZIP archive contains no entries.")
-                else if (entries.hasMoreElements()) names + "Showing the first $MAX_DISPLAY_ENTRIES entries."
-                else names
-            }
+            return ZipArchiveInspector.readEntries(temp)
         } catch (_: ZipException) {
             return listOf("This file is not a valid ZIP archive.")
         } catch (_: SecurityException) {
@@ -254,6 +245,26 @@ private fun ArchiveHome(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(details) { entry -> Text(entry, style = MaterialTheme.typography.bodyMedium) }
+            }
+        }
+    }
+}
+
+
+/** Small, testable ZIP directory reader. It never extracts or writes archive paths. */
+internal object ZipArchiveInspector {
+    fun readEntries(file: File, maxEntries: Int = MAX_DISPLAY_ENTRIES): List<String> {
+        require(maxEntries > 0) { "maxEntries must be positive" }
+        return ZipFile(file).use { zip ->
+            val names = mutableListOf<String>()
+            val entries = zip.entries()
+            while (entries.hasMoreElements() && names.size < maxEntries) {
+                names.add(entries.nextElement().name)
+            }
+            when {
+                names.isEmpty() -> listOf("This ZIP archive contains no entries.")
+                entries.hasMoreElements() -> names + "Showing the first $maxEntries entries."
+                else -> names
             }
         }
     }
