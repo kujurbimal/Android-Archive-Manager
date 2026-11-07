@@ -173,7 +173,7 @@ class MainActivity : ComponentActivity() {
             uris.forEach { inputs.add(copyUriToCache(it)) }
             inputs.forEachIndexed { index, file ->
                 val desired = queryName(uris[index]).replace(Regex("[/\\\\]"), "_")
-                val named = File(file.parentFile, "\${index}_$desired")
+                val named = File(file.parentFile, "${index}_$desired")
                 if (file.renameTo(named)) namedFiles.add(named) else namedFiles.add(file)
             }
             ArchiveEngine.create(namedFiles, output, format.lowercase(Locale.ROOT))
