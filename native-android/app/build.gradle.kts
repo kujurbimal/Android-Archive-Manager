@@ -65,4 +65,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     implementation("org.tukaani:xz:1.10")
     implementation("org.slf4j:slf4j-nop:1.7.36")
+    implementation("org.tukaani:xz:1.10")
+    implementation("org.slf4j:slf4j-nop:1.7.36")
 }
