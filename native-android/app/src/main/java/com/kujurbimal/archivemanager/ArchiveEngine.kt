@@ -1,5 +1,6 @@
 package com.kujurbimal.archivemanager
 
+import com.github.junrar.Archive
 import org.apache.commons.compress.archivers.ArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
@@ -47,6 +48,9 @@ internal object ArchiveEngine {
             names
         }
         "gz", "gzip" -> listOf(file.name.removeSuffix(".gz"))
+        "rar" -> Archive(file).use { archive ->
+            archive.fileHeaders.take(MAX_ENTRIES).map { it.fileNameString }
+        }
         "7z" -> SevenZFile.builder().setFile(file).get().use { archive ->
             val names = mutableListOf<String>()
             for (entry in archive.entries) {
@@ -109,6 +113,25 @@ internal object ArchiveEngine {
             }
             "gz", "gzip" -> GZIPInputStream(BufferedInputStream(FileInputStream(file))).use { input ->
                 writeEntry(file.name.removeSuffix(".gz"), false) { out -> copyLimited(input, out, MAX_EXPANDED_BYTES) }
+            }
+            "rar" -> Archive(file).use { archive ->
+                for (entry in archive.fileHeaders) {
+                    val name = entry.fileNameString
+                    writeEntry(name, entry.isDirectory) { out ->
+                        if (entry.isDirectory) 0L else {
+                            val targetLength = entry.fullUnpackSize
+                            require(targetLength <= MAX_EXPANDED_BYTES - expanded) { "Expanded data exceeds 1 GB safety limit" }
+                            val tempTarget = File.createTempFile("rar-entry-", ".tmp", destination)
+                            try {
+                                FileOutputStream(tempTarget).use { archive.extractFile(entry, it) }
+                                val length = tempTarget.length()
+                                require(length <= MAX_EXPANDED_BYTES - expanded) { "Expanded data exceeds 1 GB safety limit" }
+                                tempTarget.inputStream().use { it.copyTo(out) }
+                                length
+                            } finally { tempTarget.delete() }
+                        }
+                    }
+                }
             }
             "7z" -> SevenZFile.builder().setFile(file).get().use { archive ->
                 for (entry in archive.entries) {
