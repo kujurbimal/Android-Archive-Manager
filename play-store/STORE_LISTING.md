@@ -2,20 +2,27 @@
 
 **App name:** Archive Manager+  
 **Suggested category:** Tools  
-**Short description (80 characters max):** Select and inspect local ZIP files with a simple archive library.
+**Short description (80 characters max):** Create, inspect and extract popular archive formats on your Android device.
 
 ## Full description
-Archive Manager+ is a simple, local-first utility for selecting files on your Android device and viewing the contents of ZIP archives.
+Archive Manager+ is a local-first file utility for creating, browsing and extracting common archive formats.
 
 **Features**
-- Choose files using Android's system document picker.
-- View selected files in a simple session library.
-- Inspect file names stored inside supported ZIP archives.
-- Remove items from the in-session list without deleting the original document.
-- No account required for the prototype.
+- Select files through Android's system file picker.
+- Search and sort your in-app file library.
+- Inspect archive entry names before extracting.
+- Create ZIP, TAR, TAR.GZ, GZIP and 7z archives from selected files.
+- Extract ZIP, TAR, TAR.GZ, GZIP, 7z and supported RAR archives into a folder you choose.
+- Choose light or dark appearance.
+- No account required; selected files are processed locally by the app.
 
-**Current limitations**
-This build is a prototype. It does not yet create archives, extract archive contents, verify checksums, or support TAR, 7z, or RAR. Do not publish feature claims until those capabilities are implemented and tested.
+**Important format notes**
+- GZIP creates one compressed file at a time.
+- RAR support is extraction-only; archive creation is not supported.
+- Password-protected and multi-volume archives may not be supported.
+- Archive creation currently handles selected files, not complete folder trees.
+
+Review these claims against the final tested release build before publishing. Do not claim encrypted archive support, integrity verification, or folder-tree compression unless those features are separately implemented and tested.
 
 ## Required assets
 - App icon: 512 × 512 PNG, within Google Play's current asset requirements.
