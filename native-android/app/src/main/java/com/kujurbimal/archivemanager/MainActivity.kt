@@ -314,7 +314,7 @@ private fun ArchiveManagerApp(
                 }
                 if (busy) CircularProgressIndicator()
                 Text(status, style = MaterialTheme.typography.bodySmall)
-                Text("ZIP, TAR, TAR.GZ, GZIP and 7Z. RAR is not supported in this build.", style = MaterialTheme.typography.labelSmall)
+                Text("Create: ZIP, TAR, TAR.GZ, GZIP, 7Z · Extract: ZIP, TAR, TAR.GZ, GZIP, 7Z, RAR", style = MaterialTheme.typography.labelSmall)
             }
         }
     }
