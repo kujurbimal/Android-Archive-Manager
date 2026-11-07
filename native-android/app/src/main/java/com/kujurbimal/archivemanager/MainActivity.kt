@@ -20,39 +20,57 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.zip.ZipException
 import java.util.zip.ZipFile
+
+private const val PREFS_NAME = "archive_manager_library"
+private const val PREFS_URIS = "selected_document_uris"
+private const val MAX_ZIP_BYTES = 256L * 1024L * 1024L
+private const val MAX_DISPLAY_ENTRIES = 500
 
 data class LocalArchive(val uri: Uri, val name: String, val sizeLabel: String)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val savedUris = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getStringSet(PREFS_URIS, emptySet())
+            .orEmpty()
+            .mapNotNull { raw -> runCatching { Uri.parse(raw) }.getOrNull() }
+            .filter { uri ->
+                runCatching {
+                    contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+                }.getOrDefault(false)
+            }
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
                     ArchiveHome(
-                        onPicked = { uri ->
-                            val name = queryName(uri)
-                            val size = querySize(uri)
-                            // Retain access to the selected document across app restarts.
-                            runCatching {
-                                contentResolver.takePersistableUriPermission(
-                                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                )
-                            }
-                            uri
-                        },
+                        initialUris = savedUris,
                         getDisplayName = ::queryName,
                         getDisplaySize = ::querySize,
+                        onPicked = ::retainAndSaveUri,
+                        onRemoved = ::removeSavedUri,
                         inspectZip = ::inspectZip
                     )
                 }
@@ -60,86 +78,168 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun queryName(uri: Uri): String =
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) ?: "Selected archive" else "Selected archive"
-        } ?: "Selected archive"
+    private fun retainAndSaveUri(uri: Uri) {
+        runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+        val current = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getStringSet(PREFS_URIS, emptySet()).orEmpty().toMutableSet()
+        current.add(uri.toString())
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putStringSet(PREFS_URIS, current).apply()
+    }
 
-    private fun querySize(uri: Uri): String =
+    private fun removeSavedUri(uri: Uri) {
+        val current = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getStringSet(PREFS_URIS, emptySet()).orEmpty().toMutableSet()
+        current.remove(uri.toString())
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putStringSet(PREFS_URIS, current).apply()
+        runCatching {
+            contentResolver.releasePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+    }
+
+    private fun queryName(uri: Uri): String = runCatching {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } ?: "Selected file"
+            else "Selected file"
+        } ?: "Selected file"
+    }.getOrDefault("Selected file")
+
+    private fun querySize(uri: Uri): String = runCatching {
         contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst() && !cursor.isNull(0)) {
                 val bytes = cursor.getLong(0)
                 if (bytes >= 1_048_576) "${bytes / 1_048_576} MB" else "${bytes / 1024} KB"
             } else "Size unavailable"
         } ?: "Size unavailable"
+    }.getOrDefault("Size unavailable")
 
     private fun inspectZip(uri: Uri): List<String> {
-        return try {
-            contentResolver.openInputStream(uri)?.use { input ->
-                val temp = java.io.File(cacheDir, "inspect-${System.currentTimeMillis()}.zip")
-                temp.outputStream().use { output -> input.copyTo(output) }
-                try {
-                    ZipFile(temp).use { zip ->
-                        val result = mutableListOf<String>()
-                        val entries = zip.entries()
-                        while (entries.hasMoreElements() && result.size < 200) {
-                            result.add(entries.nextElement().name)
+        val temp = File.createTempFile("archive-inspect-", ".zip", cacheDir)
+        try {
+            val input = contentResolver.openInputStream(uri)
+                ?: return listOf("Could not open the selected document.")
+            input.use { source ->
+                temp.outputStream().buffered().use { destination ->
+                    val buffer = ByteArray(8 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val read = source.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        if (total > MAX_ZIP_BYTES) {
+                            return listOf("File is larger than the 256 MB inspection limit.")
                         }
-                        result
+                        destination.write(buffer, 0, read)
                     }
-                } finally { temp.delete() }
-            } ?: emptyList()
+                }
+            }
+            return ZipFile(temp).use { zip ->
+                val names = mutableListOf<String>()
+                val entries = zip.entries()
+                while (entries.hasMoreElements() && names.size < MAX_DISPLAY_ENTRIES) {
+                    names.add(entries.nextElement().name)
+                }
+                if (names.isEmpty()) listOf("This ZIP archive contains no entries.")
+                else if (entries.hasMoreElements()) names + "Showing the first $MAX_DISPLAY_ENTRIES entries."
+                else names
+            }
+        } catch (_: ZipException) {
+            return listOf("This file is not a valid ZIP archive.")
+        } catch (_: SecurityException) {
+            return listOf("Access to this document was denied. Please import it again.")
         } catch (_: Exception) {
-            listOf("Unable to read this file as a valid ZIP archive.")
+            return listOf("Could not inspect this file. It may be unavailable or damaged.")
+        } finally {
+            temp.delete()
         }
     }
 }
 
 @Composable
 private fun ArchiveHome(
-    onPicked: (Uri) -> Uri,
+    initialUris: List<Uri>,
     getDisplayName: (Uri) -> String,
     getDisplaySize: (Uri) -> String,
+    onPicked: (Uri) -> Unit,
+    onRemoved: (Uri) -> Unit,
     inspectZip: (Uri) -> List<String>
 ) {
-    val archives = remember { mutableStateListOf<LocalArchive>() }
+    val archives = remember {
+        mutableStateListOf<LocalArchive>().apply {
+            initialUris.forEach { uri ->
+                add(LocalArchive(uri, getDisplayName(uri), getDisplaySize(uri)))
+            }
+        }
+    }
     val details = remember { mutableStateListOf<String>() }
+    var inspectingUri by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            val retained = onPicked(uri)
-            val item = LocalArchive(retained, getDisplayName(retained), getDisplaySize(retained))
-            if (archives.none { it.uri == retained }) archives.add(item)
+            onPicked(uri)
+            val item = LocalArchive(uri, getDisplayName(uri), getDisplaySize(uri))
+            if (archives.none { it.uri == uri }) archives.add(item)
             details.clear()
             details.add("Imported: ${item.name}")
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(
+        Modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text("Archive Manager+", style = MaterialTheme.typography.headlineMedium)
-        Text("A local-first place to select and inspect ZIP archives.")
-        Button(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Import a file")
-        }
+        Text("Select local files and inspect ZIP archive contents.")
+        Button(
+            onClick = { picker.launch(arrayOf("*/*")) },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Import a file") }
+
         Text("Library (${archives.size})", style = MaterialTheme.typography.titleLarge)
         if (archives.isEmpty()) {
-            Text("No files selected yet. Choose a file to add it to this session.")
+            Text("No files selected yet. Choose a file to add it to your library.")
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(
+                modifier = Modifier.weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 items(archives, key = { it.uri.toString() }) { archive ->
-                    Card(colors = CardDefaults.cardColors()) {
+                    Card {
                         Column(Modifier.fillMaxWidth().padding(14.dp)) {
                             Text(archive.name, style = MaterialTheme.typography.titleMedium)
                             Text(archive.sizeLabel, style = MaterialTheme.typography.bodySmall)
                             Spacer(Modifier.height(8.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = {
-                                    details.clear()
-                                    details.addAll(inspectZip(archive.uri).ifEmpty { listOf("No entries found.") })
-                                }) { Text("Inspect ZIP") }
+                                Button(
+                                    enabled = inspectingUri == null,
+                                    onClick = {
+                                        inspectingUri = archive.uri.toString()
+                                        scope.launch {
+                                            val result = withContext(Dispatchers.IO) {
+                                                inspectZip(archive.uri)
+                                            }
+                                            details.clear()
+                                            details.addAll(result)
+                                            inspectingUri = null
+                                        }
+                                    }
+                                ) {
+                                    if (inspectingUri == archive.uri.toString()) {
+                                        CircularProgressIndicator()
+                                    } else Text("Inspect ZIP")
+                                }
                                 Button(onClick = {
                                     archives.remove(archive)
+                                    onRemoved(archive.uri)
                                     details.clear()
-                                    details.add("Removed from this session. Original file is unchanged.")
+                                    details.add("Removed from your library. The original file was not deleted.")
                                 }) { Text("Remove") }
                             }
                         }
@@ -149,8 +249,11 @@ private fun ArchiveHome(
         }
         if (details.isNotEmpty()) {
             Text("Details", style = MaterialTheme.typography.titleMedium)
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(details) { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(details) { entry -> Text(entry, style = MaterialTheme.typography.bodyMedium) }
             }
         }
     }
