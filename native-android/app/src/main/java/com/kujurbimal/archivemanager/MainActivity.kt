@@ -167,18 +167,21 @@ class MainActivity : ComponentActivity() {
 
     private fun createArchive(uris: List<Uri>, format: String, outputUri: Uri) {
         val inputs = mutableListOf<File>()
+        val namedFiles = mutableListOf<File>()
         val output = File.createTempFile("archive-output-", ".bin", cacheDir)
         try {
             uris.forEach { inputs.add(copyUriToCache(it)) }
-            val namedFiles = inputs.mapIndexed { index, file ->
-                val desired = queryName(uris[index]).replace(Regex("[/\\\\\\\\]"), "_")
-                File(file.parentFile, desired).also { if (it != file) file.renameTo(it) }
+            inputs.forEachIndexed { index, file ->
+                val desired = queryName(uris[index]).replace(Regex("[/\\\\]"), "_")
+                val named = File(file.parentFile, "\${index}_$desired")
+                if (file.renameTo(named)) namedFiles.add(named) else namedFiles.add(file)
             }
             ArchiveEngine.create(namedFiles, output, format.lowercase(Locale.ROOT))
             contentResolver.openOutputStream(outputUri, "w")?.use { target -> output.inputStream().use { it.copyTo(target) } }
                 ?: throw IllegalStateException("Cannot write destination document")
         } finally {
             inputs.forEach { it.delete() }
+            namedFiles.forEach { it.delete() }
             output.delete()
         }
     }
@@ -267,7 +270,7 @@ private fun ArchiveManagerApp(
                     Button(enabled = !busy, onClick = { createPicker.launch(arrayOf("*/*")) }) { Text("Create archive") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(enabled = selected.isNotEmpty() && !busy, onClick = { outputPicker.launch("archive.${createFormat.lowercase().replace('.', '-')}" ) }) { Text("Save ${createFormat}") }
+                    Button(enabled = selected.isNotEmpty() && !busy, onClick = { outputPicker.launch("archive.${createFormat.lowercase()}" ) }) { Text("Save ${createFormat}") }
                     Button(onClick = { createFormat = exportFormats[(exportFormats.indexOf(createFormat) + 1) % exportFormats.size] }) { Text("Format: $createFormat") }
                     Button(onClick = { sortByName = !sortByName }) { Text(if (sortByName) "Sort: A–Z" else "Sort: newest") }
                 }
